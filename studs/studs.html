@@ -7,12 +7,25 @@
 </head>
 <body>
   <div class="wrapper">
+    <div class="hud">
+      <div class="score">
+        Score: <span id="scoreValue">0</span>
+      </div>
+      <div class="health-line">
+        <div class="health-bar">
+          <div class="health-fill" id="healthFill"></div>
+        </div>
+        <div class="health-text" id="healthText">Health: 5 / 5</div>
+      </div>
+    </div>
+
     <div class="game-box">
       <canvas id="myCanvas" width="400" height="300"></canvas>
     </div>
     <div class="controls">
       <button id="stopBtn">Stop</button>
       <button id="startBtn">Start</button>
+      <button id="restartBtn">Restart</button>
     </div>
   </div>
 

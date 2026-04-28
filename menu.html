@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Menu</title>
+    <link rel="stylesheet" href="menu.css">
+</head>
+<body>
+    <div class="menu">
+        <h1>Studs Game</h1>
+        <div class="buttons">
+            <button id="playBtn">Play</button>
+            <button id="instructionsBtn">Instructions</button>
+            <button id="controlsBtn">Controls</button>
+            <button id="backgroundBtn">Toggle Background</button>
+        </div>
+    </div>
+
+    <!-- Instructions Modal -->
+    <div id="instructionsModal" class="modal">
+        <div class="modal-content">
+            <span class="close" id="closeInstructions">&times;</span>
+            <h2>How to Play</h2>
+            <p>The game features a bouncing ball that shoots homing projectiles at you. Use WASD keys to move your blue ball and avoid the projectiles. The black ball will continuously shoot at you. Survive as long as possible!</p>
+        </div>
+    </div>
+
+    <!-- Controls Modal -->
+    <div id="controlsModal" class="modal">
+        <div class="modal-content">
+            <span class="close" id="closeControls">&times;</span>
+            <h2>Controls</h2>
+            <p>W: Move Up</p>
+            <p>A: Move Left</p>
+            <p>S: Move Down</p>
+            <p>D: Move Right</p>
+            <p>Space: Manual Shot (from black ball)</p>
+        </div>
+    </div>
+
+    <script src="menu.js"></script>
+</body>
+</html>
