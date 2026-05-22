@@ -1,36 +1,87 @@
 const canvas = document.getElementById("myCanvas");
 const ctx = canvas.getContext("2d");
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
 
-const radius = 10;
+const Engine = Matter.Engine,
+      World = Matter.World,
+      Bodies = Matter.Bodies,
+      Body = Matter.Body;
+
+const engine = Engine.create();
+engine.gravity.x = 0;
+engine.gravity.y = 1;
+const world = engine.world;
+
+const radius = 20;
+const playerHitboxRadius = radius + 14;
+const enemyHitboxRadius = radius + 14;
 const projectileRadius = 3;
 const enemyProjectileSpeed = 4;
-const playerProjectileSpeed = 5;
+const playerProjectileSpeed = 10;
 const projectileLife = 120;
 const homingStrength = 0.08;
+const playerHomingStrength = 0.12;
 const shotInterval = 60;
 const maxHealth = 5;
 const maxEnemyHealth = 3;
 const enemyBallSpeed = 2.5;
-const playerBallSpeed = 4;
+const playerBallSpeed = enemyBallSpeed;
+const playerForce = 0.0006;
+const playerJumpForce = 18;
+const playerMaxSpeed = 6;
+const groundHeight = 60;
+const maxJumpTime = 30;
+const jumpForcePerFrame = 0.0011;
 
-let x = canvas.width / 2;
-let y = canvas.height / 2;
-let dx = 2;
-let dy = 3;
+const enemies = [];
+let gameStarted = false;
+let jumpActive = false;
+let jumpTime = 0;
 
-let x2 = 50;
-let y2 = 50;
-let dx2 = 0;
-let dy2 = 0;
+const playerBody = Bodies.circle(50, 120, radius, {
+  frictionAir: 0,
+  restitution: 0,
+  label: "player"
+});
+
+const controlBarrier = Bodies.rectangle(canvas.width / 2, 44, 380, 70, {
+  isStatic: true,
+  render: { visible: false },
+  label: "controlBarrier"
+});
+
+const ground = Bodies.rectangle(canvas.width / 2, canvas.height - groundHeight / 2, canvas.width, groundHeight, {
+  isStatic: true,
+  render: { visible: false },
+  label: "ground"
+});
+
+const enemyBarrier = {
+  x: canvas.width / 2,
+  y: 44,
+  halfWidth: 190,
+  halfHeight: 35
+};
+
+World.add(world, [
+  playerBody,
+  controlBarrier,
+  ground,
+  Bodies.rectangle(canvas.width / 2, -25, canvas.width + 50, 50, { isStatic: true }),
+  Bodies.rectangle(-25, canvas.height / 2, 50, canvas.height + 50, { isStatic: true }),
+  Bodies.rectangle(canvas.width + 25, canvas.height / 2, 50, canvas.height + 50, { isStatic: true })
+]);
+
 let keys = { w: false, a: false, s: false, d: false };
+let pointerX = canvas.width / 2;
+let pointerY = canvas.height / 2;
 let shotTimer = 0;
 
 let playerHealth = maxHealth;
-let enemyHealth = maxEnemyHealth;
 let score = 0;
-let running = true;
+let running = false;
 let animationId = null;
-let enemyAlive = true;
 
 const enemyProjectiles = [];
 const playerProjectiles = [];
@@ -40,17 +91,33 @@ const healthFill = document.getElementById("healthFill");
 const healthText = document.getElementById("healthText");
 
 function drawEnemy() {
-  if (!enemyAlive) return;
-  ctx.beginPath();
-  ctx.arc(x, y, radius, 0, Math.PI * 2);
-  ctx.fillStyle = "black";
-  ctx.fill();
-  ctx.closePath();
+  enemies.forEach((enemy) => {
+    if (!enemy.alive) return;
+    ctx.beginPath();
+    ctx.arc(enemy.x, enemy.y, radius, 0, Math.PI * 2);
+    ctx.fillStyle = "orange";
+    ctx.fill();
+    ctx.closePath();
+
+    const barWidth = 60;
+    const barHeight = 8;
+    const healthRatio = enemy.health / maxEnemyHealth;
+    const barX = enemy.x - barWidth / 2;
+    const barY = enemy.y - radius - 18;
+
+    ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+    ctx.fillRect(barX, barY, barWidth, barHeight);
+    ctx.fillStyle = "red";
+    ctx.fillRect(barX + 1, barY + 1, (barWidth - 2) * healthRatio, barHeight - 2);
+    ctx.strokeStyle = "white";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, barY, barWidth, barHeight);
+  });
 }
 
 function drawPlayer() {
   ctx.beginPath();
-  ctx.arc(x2, y2, radius, 0, Math.PI * 2);
+  ctx.arc(playerBody.position.x, playerBody.position.y, radius, 0, Math.PI * 2);
   ctx.fillStyle = "blue";
   ctx.fill();
   ctx.closePath();
@@ -64,31 +131,47 @@ function updateHud() {
   healthText.textContent = `Health: ${playerHealth} / ${maxHealth}`;
 }
 
+function isPlayerGrounded() {
+  return playerBody.position.y >= canvas.height - groundHeight - radius - 1 && Math.abs(playerBody.velocity.y) < 2;
+}
+
 function getRandomPosition(min, max) {
   return Math.random() * (max - min) + min;
 }
 
-function respawnEnemy() {
-  enemyAlive = true;
-  enemyHealth = maxEnemyHealth;
-
+function createEnemy() {
   const margin = radius * 3;
+  const maxY = canvas.height - groundHeight - margin;
   let newX;
   let newY;
   let safeDistance = false;
 
   while (!safeDistance) {
     newX = getRandomPosition(margin, canvas.width - margin);
-    newY = getRandomPosition(margin, canvas.height - margin);
-    const dxPlayer = newX - x2;
-    const dyPlayer = newY - y2;
-    safeDistance = Math.sqrt(dxPlayer * dxPlayer + dyPlayer * dyPlayer) > 100;
+    newY = getRandomPosition(margin, maxY);
+    const dxPlayer = newX - playerBody.position.x;
+    const dyPlayer = newY - playerBody.position.y;
+    const currentDistance = Math.sqrt(dxPlayer * dxPlayer + dyPlayer * dyPlayer);
+    const enemySafe = enemies.every((enemy) => {
+      const dxEnemy = newX - enemy.x;
+      const dyEnemy = newY - enemy.y;
+      return Math.sqrt(dxEnemy * dxEnemy + dyEnemy * dyEnemy) > 100;
+    });
+    safeDistance = currentDistance > 100 && enemySafe;
   }
 
-  x = newX;
-  y = newY;
-  dx = Math.sign(Math.random() - 0.5) * enemyBallSpeed;
-  dy = Math.sign(Math.random() - 0.5) * enemyBallSpeed;
+  return {
+    x: newX,
+    y: newY,
+    dx: Math.sign(Math.random() - 0.5) * enemyBallSpeed || enemyBallSpeed,
+    dy: Math.sign(Math.random() - 0.5) * enemyBallSpeed || enemyBallSpeed,
+    health: maxEnemyHealth,
+    alive: true
+  };
+}
+
+function spawnEnemy() {
+  enemies.push(createEnemy());
 }
 
 function createProjectile(startX, startY, dirX, dirY, type = "enemy") {
@@ -129,23 +212,38 @@ function drawGameOver() {
 function resetGame() {
   playerHealth = maxHealth;
   score = 0;
-  enemyHealth = maxEnemyHealth;
-  enemyAlive = true;
-  running = true;
+  running = false;
   shotTimer = 0;
   enemyProjectiles.length = 0;
   playerProjectiles.length = 0;
-  x2 = 50;
-  y2 = 50;
-  respawnEnemy();
+  enemies.length = 0;
+  Body.setPosition(playerBody, { x: canvas.width / 2, y: 120 });
+  Body.setVelocity(playerBody, { x: 0, y: 0 });
+  keys = { w: false, a: false, s: false, d: false };
+  jumpActive = false;
+  jumpTime = 0;
+  spawnEnemy();
   updateHud();
-  animationId = requestAnimationFrame(draw);
+  drawScene();
+}
+
+function drawScene() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#0a0";
+  ctx.fillRect(0, canvas.height - groundHeight, canvas.width, groundHeight);
+  drawPlayer();
+  drawEnemy();
 }
 
 function draw() {
-  if (!running) return;
+  if (!running) {
+    drawScene();
+    return;
+  }
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#0a0";
+  ctx.fillRect(0, canvas.height - groundHeight, canvas.width, groundHeight);
 
   for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
     const proj = enemyProjectiles[i];
@@ -155,8 +253,8 @@ function draw() {
     }
 
     proj.life--;
-    const targetDx = x2 - proj.x;
-    const targetDy = y2 - proj.y;
+    const targetDx = playerBody.position.x - proj.x;
+    const targetDy = playerBody.position.y - proj.y;
     const targetDist = Math.hypot(targetDx, targetDy);
     if (targetDist > 0) {
       proj.dx += (targetDx / targetDist) * homingStrength;
@@ -169,7 +267,7 @@ function draw() {
     proj.x += proj.dx;
     proj.y += proj.dy;
 
-    if (collides(proj.x, proj.y, projectileRadius, x2, y2, radius)) {
+    if (collides(proj.x, proj.y, projectileRadius, playerBody.position.x, playerBody.position.y, playerHitboxRadius)) {
       playerHealth = Math.max(0, playerHealth - 1);
       proj.active = false;
       updateHud();
@@ -204,6 +302,25 @@ function draw() {
     }
 
     proj.life--;
+    if (proj.type === "player") {
+      const targetEnemy = enemies.reduce((closest, enemy) => {
+        if (!enemy.alive) return closest;
+        const dxEnemy = enemy.x - proj.x;
+        const dyEnemy = enemy.y - proj.y;
+        const dist = Math.hypot(dxEnemy, dyEnemy);
+        if (!closest || dist < closest.dist) {
+          return { enemy, dist, dx: dxEnemy, dy: dyEnemy };
+        }
+        return closest;
+      }, null);
+      if (targetEnemy) {
+        proj.dx += (targetEnemy.dx / targetEnemy.dist) * playerHomingStrength;
+        proj.dy += (targetEnemy.dy / targetEnemy.dist) * playerHomingStrength;
+        const len = Math.hypot(proj.dx, proj.dy);
+        proj.dx = (proj.dx / len) * playerProjectileSpeed;
+        proj.dy = (proj.dy / len) * playerProjectileSpeed;
+      }
+    }
     proj.x += proj.dx;
     proj.y += proj.dy;
 
@@ -223,18 +340,27 @@ function draw() {
       }
     }
 
-    if (enemyAlive && collides(proj.x, proj.y, projectileRadius, x, y, radius)) {
-      enemyHealth = Math.max(0, enemyHealth - 1);
-      proj.active = false;
+    enemies.some((enemy) => {
+      if (!proj.active || !enemy.alive) return false;
+      if (collides(proj.x, proj.y, projectileRadius, enemy.x, enemy.y, enemyHitboxRadius)) {
+        enemy.health = Math.max(0, enemy.health - 1);
+        proj.active = false;
 
-      if (enemyHealth <= 0) {
-        score += 1;
-        enemyAlive = false;
-        respawnEnemy();
+        if (enemy.health <= 0) {
+          score += 1;
+          enemy.alive = false;
+          enemyProjectiles.length = 0;
+          spawnEnemy();
+          if (score % 3 === 0) {
+            spawnEnemy();
+          }
+        }
+
+        updateHud();
+        return true;
       }
-
-      updateHud();
-    }
+      return false;
+    });
 
     if (proj.life <= 0 || proj.x - projectileRadius < 0 || proj.x + projectileRadius > canvas.width ||
         proj.y - projectileRadius < 0 || proj.y + projectileRadius > canvas.height) {
@@ -252,43 +378,83 @@ function draw() {
     }
   }
 
-  dx2 = 0;
-  dy2 = 0;
-  if (keys.w) dy2 = -playerBallSpeed;
-  if (keys.a) dx2 = -playerBallSpeed;
-  if (keys.s) dy2 = playerBallSpeed;
-  if (keys.d) dx2 = playerBallSpeed;
+  const velocity = playerBody.velocity;
+  const grounded = isPlayerGrounded();
+  let vx = velocity.x;
 
-  x2 += dx2;
-  y2 += dy2;
-  x2 = Math.max(radius, Math.min(canvas.width - radius, x2));
-  y2 = Math.max(radius, Math.min(canvas.height - radius, y2));
+  if (keys.a) vx = -playerBallSpeed;
+  else if (keys.d) vx = playerBallSpeed;
+  else if (grounded) vx = 0;
+
+  if (jumpActive) {
+    Body.setVelocity(playerBody, { x: vx, y: -playerJumpForce });
+    jumpActive = false;
+  } else {
+    Body.setVelocity(playerBody, { x: vx, y: velocity.y });
+  }
+
+  Engine.update(engine, 1000 / 60);
+
+  if (playerBody.position.x - radius < 0) {
+    Body.setPosition(playerBody, { x: radius, y: playerBody.position.y });
+    Body.setVelocity(playerBody, { x: 0, y: velocity.y });
+  }
+  if (playerBody.position.x + radius > canvas.width) {
+    Body.setPosition(playerBody, { x: canvas.width - radius, y: playerBody.position.y });
+    Body.setVelocity(playerBody, { x: 0, y: velocity.y });
+  }
+  if (playerBody.position.y - radius < 0) {
+    Body.setPosition(playerBody, { x: playerBody.position.x, y: radius });
+    Body.setVelocity(playerBody, { x: velocity.x, y: 0 });
+  }
+  if (playerBody.position.y + radius > canvas.height - groundHeight) {
+    Body.setPosition(playerBody, { x: playerBody.position.x, y: canvas.height - groundHeight - radius });
+    Body.setVelocity(playerBody, { x: velocity.x, y: 0 });
+  }
 
   drawPlayer();
   drawEnemy();
 
-  if (enemyAlive) {
-    if (x + dx > canvas.width - radius || x + dx < radius) dx = -dx;
-    if (y + dy > canvas.height - radius || y + dy < radius) dy = -dy;
-    x += dx;
-    y += dy;
+  const groundTop = canvas.height - groundHeight;
+  enemies.forEach((enemy) => {
+    if (!enemy.alive) return;
+    if (enemy.x + enemy.dx > canvas.width - radius || enemy.x + enemy.dx < radius) enemy.dx = -enemy.dx;
+    if (enemy.y + enemy.dy > groundTop - radius || enemy.y + enemy.dy < radius) enemy.dy = -enemy.dy;
 
-    shotTimer++;
-    if (shotTimer >= shotInterval) {
-      enemyProjectiles.push(createProjectile(x, y, x2 - x, y2 - y));
-      shotTimer = 0;
+    const nextX = enemy.x + enemy.dx;
+    const nextY = enemy.y + enemy.dy;
+    const barrierLeft = enemyBarrier.x - enemyBarrier.halfWidth - radius;
+    const barrierRight = enemyBarrier.x + enemyBarrier.halfWidth + radius;
+    const barrierTop = enemyBarrier.y - enemyBarrier.halfHeight - radius;
+    const barrierBottom = enemyBarrier.y + enemyBarrier.halfHeight + radius;
+    if (nextX > barrierLeft && nextX < barrierRight && nextY > barrierTop && nextY < barrierBottom) {
+      enemy.dy = Math.abs(enemy.dy);
     }
+
+    enemy.x += enemy.dx;
+    enemy.y += enemy.dy;
+  });
+
+  shotTimer++;
+  if (shotTimer >= shotInterval) {
+    enemies.forEach((enemy) => {
+      if (!enemy.alive) return;
+      enemyProjectiles.push(createProjectile(enemy.x, enemy.y, playerBody.position.x - enemy.x, playerBody.position.y - enemy.y));
+    });
+    shotTimer = 0;
   }
 
   requestAnimationFrame(draw);
 }
 
+spawnEnemy();
 updateHud();
-animationId = requestAnimationFrame(draw);
+drawScene();
 
 document.getElementById("startBtn").addEventListener("click", () => {
   if (!running && playerHealth > 0) {
     running = true;
+    gameStarted = true;
     animationId = requestAnimationFrame(draw);
   }
 });
@@ -301,17 +467,25 @@ document.getElementById("restartBtn").addEventListener("click", () => {
   resetGame();
 });
 
+document.addEventListener("mousemove", (event) => {
+  const rect = canvas.getBoundingClientRect();
+  pointerX = event.clientX - rect.left;
+  pointerY = event.clientY - rect.top;
+});
+
 document.addEventListener("keydown", (event) => {
   const key = event.key.toLowerCase();
 
-  if (event.code === "Space" && playerHealth > 0) {
-    playerProjectiles.push(createProjectile(x2, y2, x - x2, y - y2, "player"));
+  if (key === "k" && playerHealth > 0) {
+    playerProjectiles.push(createProjectile(playerBody.position.x, playerBody.position.y, pointerX - playerBody.position.x, pointerY - playerBody.position.y, "player"));
     return;
   }
 
-  if (key === "w") keys.w = true;
-  else if (key === "a") keys.a = true;
-  else if (key === "s") keys.s = true;
+  if ((key === "w" || event.code === "Space") && playerHealth > 0 && isPlayerGrounded()) {
+    jumpActive = true;
+  }
+
+  if (key === "a") keys.a = true;
   else if (key === "d") keys.d = true;
 });
 
@@ -321,4 +495,15 @@ document.addEventListener("keyup", (event) => {
   else if (key === "a") keys.a = false;
   else if (key === "s") keys.s = false;
   else if (key === "d") keys.d = false;
+});
+
+window.addEventListener('resize', () => {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  // Update ground position to match new canvas height
+  Body.setPosition(ground, { x: canvas.width / 2, y: canvas.height - groundHeight / 2 });
+  // Optionally reposition player if too low
+  if (playerBody.position.y > canvas.height - groundHeight - radius) {
+    Body.setPosition(playerBody, { x: playerBody.position.x, y: canvas.height - groundHeight - radius });
+  }
 });
