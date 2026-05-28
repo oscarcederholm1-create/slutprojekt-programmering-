@@ -3,6 +3,22 @@ const ctx = canvas.getContext("2d");
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
+// fiende sprite (3 frames: (0,0), (64,0), (0,64))
+const enemySprite = new Image();
+enemySprite.src = './dronedog.png';
+const spriteFrames = [ { x: 0, y: 0 }, { x: 64, y: 0 }, { x: 0, y: 64 } ];
+let spriteFrameIndex = 0;
+let spriteTick = 0;
+const spriteTicksPerFrame = 10; // skiftar frame var 10:e tick
+
+function updateSprite() {
+  spriteTick++;
+  if (spriteTick >= spriteTicksPerFrame) {
+    spriteTick = 0;
+    spriteFrameIndex = (spriteFrameIndex + 1) % spriteFrames.length;
+  }
+}
+
 const Engine = Matter.Engine,
       World = Matter.World,
       Bodies = Matter.Bodies,
@@ -73,7 +89,7 @@ World.add(world, [
   Bodies.rectangle(canvas.width + 25, canvas.height / 2, 50, canvas.height + 50, { isStatic: true })
 ]);
 
-let keys = { w: false, a: false, s: false, d: false };
+let keys = { w: false, a: false, d: false };
 let pointerX = canvas.width / 2;
 let pointerY = canvas.height / 2;
 let shotTimer = 0;
@@ -93,11 +109,19 @@ const healthText = document.getElementById("healthText");
 function drawEnemy() {
   enemies.forEach((enemy) => {
     if (!enemy.alive) return;
-    ctx.beginPath();
-    ctx.arc(enemy.x, enemy.y, radius, 0, Math.PI * 2);
-    ctx.fillStyle = "orange";
-    ctx.fill();
-    ctx.closePath();
+    // rita fiende med sprite om den är laddad, annars som en cirkel
+    const drawW = radius * 4;
+    const drawH = radius * 4;
+    if (enemySprite && enemySprite.complete) {
+      const f = spriteFrames[spriteFrameIndex];
+      ctx.drawImage(enemySprite, f.x, f.y, 64, 64, enemy.x - drawW / 2, enemy.y - drawH / 2, drawW, drawH);
+    } else {
+      ctx.beginPath();
+      ctx.arc(enemy.x, enemy.y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = "orange";
+      ctx.fill();
+      ctx.closePath();
+    }
 
     const barWidth = 60;
     const barHeight = 8;
@@ -231,6 +255,7 @@ function drawScene() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = "#0a0";
   ctx.fillRect(0, canvas.height - groundHeight, canvas.width, groundHeight);
+  updateSprite();
   drawPlayer();
   drawEnemy();
 }
@@ -395,6 +420,8 @@ function draw() {
 
   Engine.update(engine, 1000 / 60);
 
+  updateSprite();
+
   if (playerBody.position.x - radius < 0) {
     Body.setPosition(playerBody, { x: radius, y: playerBody.position.y });
     Body.setVelocity(playerBody, { x: 0, y: velocity.y });
@@ -476,12 +503,16 @@ document.addEventListener("mousemove", (event) => {
 document.addEventListener("keydown", (event) => {
   const key = event.key.toLowerCase();
 
-  if (key === "k" && playerHealth > 0) {
-    playerProjectiles.push(createProjectile(playerBody.position.x, playerBody.position.y, pointerX - playerBody.position.x, pointerY - playerBody.position.y, "player"));
+  if ( event.code === "Space" && playerHealth > 0) {
+    playerProjectiles.push(createProjectile(playerBody.position.x,
+        playerBody.position.y,
+        pointerX - playerBody.position.x,
+        pointerY - playerBody.position.y,
+        "player"));
     return;
   }
 
-  if ((key === "w" || event.code === "Space") && playerHealth > 0 && isPlayerGrounded()) {
+  if (key === "w" && playerHealth > 0 && isPlayerGrounded()) {
     jumpActive = true;
   }
 
@@ -493,7 +524,6 @@ document.addEventListener("keyup", (event) => {
   const key = event.key.toLowerCase();
   if (key === "w") keys.w = false;
   else if (key === "a") keys.a = false;
-  else if (key === "s") keys.s = false;
   else if (key === "d") keys.d = false;
 });
 
