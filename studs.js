@@ -5,11 +5,50 @@ canvas.height = window.innerHeight;
 
 // fiende sprite (3 frames: (0,0), (64,0), (0,64))
 const enemySprite = new Image();
-enemySprite.src = './dronedog.png';
+enemySprite.src = 'sprite-sheets/dronedog.png';
 const spriteFrames = [ { x: 0, y: 0 }, { x: 64, y: 0 }, { x: 0, y: 64 } ];
 let spriteFrameIndex = 0;
 let spriteTick = 0;
 const spriteTicksPerFrame = 10; // skiftar frame var 10:e tick
+
+// wizard sprite
+const playerSprite = new Image();
+playerSprite.src = 'sprite-sheets/wizard.png';
+
+const backgroundImage = new Image();
+backgroundImage.src = "images/backgroundimage.png";
+
+const fireballFrames = [
+  { x: 2*96, y: 0*128 },
+  { x: 3*96, y: 0*128 },
+  { x: 4*96, y: 0*128 },
+  { x: 5*96, y: 0*128 },
+  { x: 6*96, y: 0*128 },
+  { x: 7*96, y: 0*128 },
+  { x: 8*96, y: 0*128 },
+  { x: 9*96, y: 0*128 }
+];
+
+const jumpFrames = [
+  { x: 2*96, y: 2*128 },
+  { x: 3*96, y: 2*128 },
+  { x: 4*96, y: 2*128 },
+  { x: 5*96, y: 2*128 },
+  { x: 6*96, y: 2*128 },
+  { x: 7*96, y: 2*128 },
+  { x: 8*96, y: 2*128 },
+  { x: 9*96, y: 2*128 }
+];
+
+const walkFrames = [
+  { x: 2*96, y: 2*128 },
+  { x: 3*96, y: 2*128 },
+  { x: 4*96, y: 2*128 }
+];
+
+let playerFrameIndex = 0;
+let playerTick = 0;
+const playerTicksPerFrame = 8;
 
 function updateSprite() {
   spriteTick++;
@@ -18,7 +57,16 @@ function updateSprite() {
     spriteFrameIndex = (spriteFrameIndex + 1) % spriteFrames.length;
   }
 }
+function updatePlayerSprite() {
+    playerTick++;
 
+    if (playerTick >= playerTicksPerFrame) {
+        playerTick = 0;
+
+        playerFrameIndex =
+            (playerFrameIndex + 1) % currentFrames.length;
+    }
+}
 const Engine = Matter.Engine,
       World = Matter.World,
       Bodies = Matter.Bodies,
@@ -46,7 +94,7 @@ const playerBallSpeed = enemyBallSpeed;
 const playerForce = 0.0006;
 const playerJumpForce = 18;
 const playerMaxSpeed = 6;
-const groundHeight = 60;
+const groundHeight = 150;
 const maxJumpTime = 30;
 const jumpForcePerFrame = 0.0011;
 
@@ -60,6 +108,8 @@ const playerBody = Bodies.circle(50, 120, radius, {
   restitution: 0,
   label: "player"
 });
+
+let facingLeft = false;
 
 const controlBarrier = Bodies.rectangle(canvas.width / 2, 44, 380, 70, {
   isStatic: true,
@@ -122,7 +172,7 @@ function drawEnemy() {
       ctx.fill();
       ctx.closePath();
     }
-
+    console.log(enemies);
     const barWidth = 60;
     const barHeight = 8;
     const healthRatio = enemy.health / maxEnemyHealth;
@@ -140,12 +190,59 @@ function drawEnemy() {
 }
 
 function drawPlayer() {
-  ctx.beginPath();
-  ctx.arc(playerBody.position.x, playerBody.position.y, radius, 0, Math.PI * 2);
-  ctx.fillStyle = "blue";
-  ctx.fill();
-  ctx.closePath();
+
+    const frame =
+    (keys.a || keys.d || !isPlayerGrounded())
+    ? currentFrames[playerFrameIndex]
+    : walkFrames[0];
+
+    const frameWidth = 96;
+    const frameHeight = 128;
+
+    const drawW = 96;
+    const drawH = 128;
+
+    ctx.save();
+
+    if (facingLeft) {
+
+        ctx.scale(-1, 1);
+
+        ctx.drawImage(
+            playerSprite,
+            frame.x,
+            frame.y,
+            frameWidth,
+            frameHeight,
+
+            -(playerBody.position.x + drawW/2),
+            playerBody.position.y - drawH + radius,
+
+            drawW,
+            drawH
+        );
+
+    } else {
+
+        ctx.drawImage(
+            playerSprite,
+            frame.x,
+            frame.y,
+            frameWidth,
+            frameHeight,
+
+            playerBody.position.x - drawW/2,
+            playerBody.position.y - drawH + radius,
+
+            drawW,
+            drawH
+        );
+    }
+
+    ctx.restore();
 }
+
+let currentFrames = walkFrames;
 
 function updateHud() {
   scoreValue.textContent = score;
@@ -253,13 +350,20 @@ function resetGame() {
 
 function drawScene() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "#0a0";
-  ctx.fillRect(0, canvas.height - groundHeight, canvas.width, groundHeight);
+
+  ctx.drawImage(
+      backgroundImage,
+      0,
+      0,
+      canvas.width,
+      canvas.height
+  );
+
   updateSprite();
+  updatePlayerSprite();
   drawPlayer();
   drawEnemy();
 }
-
 function draw() {
   if (!running) {
     drawScene();
@@ -267,6 +371,17 @@ function draw() {
   }
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Background image goes here
+  ctx.drawImage(backgroundImage, 0, 0, canvas.width, canvas.height);
+
+  ctx.drawImage(
+      backgroundImage,
+      0,
+      0,
+      canvas.width,
+      canvas.height
+  );
   ctx.fillStyle = "#0a0";
   ctx.fillRect(0, canvas.height - groundHeight, canvas.width, groundHeight);
 
@@ -395,8 +510,14 @@ function draw() {
     if (proj.active) {
       ctx.beginPath();
       ctx.arc(proj.x, proj.y, projectileRadius, 0, Math.PI * 2);
-      ctx.fillStyle = "cyan";
+
+      ctx.fillStyle = "gold";  
       ctx.fill();
+
+      ctx.strokeStyle = "black";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
       ctx.closePath();
     } else {
       playerProjectiles.splice(i, 1);
@@ -421,6 +542,17 @@ function draw() {
   Engine.update(engine, 1000 / 60);
 
   updateSprite();
+  updatePlayerSprite();
+  if (!isPlayerGrounded()) {
+      currentFrames = jumpFrames;
+  }
+  else if (keys.a || keys.d) {
+      currentFrames = walkFrames;
+      playerFrameIndex = 0;
+  }
+  else {
+      currentFrames = [walkFrames[0]];
+  }
 
   if (playerBody.position.x - radius < 0) {
     Body.setPosition(playerBody, { x: radius, y: playerBody.position.y });
@@ -476,14 +608,23 @@ function draw() {
 
 spawnEnemy();
 updateHud();
-drawScene();
+backgroundImage.onload = () => {
+    drawScene();
+};
 
 document.getElementById("startBtn").addEventListener("click", () => {
   if (!running && playerHealth > 0) {
     running = true;
     gameStarted = true;
     animationId = requestAnimationFrame(draw);
+  if (!running && !animationId) {
+    running = true;
+    animationId = requestAnimationFrame(draw);
+    cancelAnimationFrame(animationId);
+    animationId = null;
+    running = false;
   }
+}
 });
 
 document.getElementById("stopBtn").addEventListener("click", () => {
@@ -516,8 +657,14 @@ document.addEventListener("keydown", (event) => {
     jumpActive = true;
   }
 
-  if (key === "a") keys.a = true;
-  else if (key === "d") keys.d = true;
+  if (key === "a") {
+    keys.a = true;
+    facingLeft = true;
+  }
+  else if (key === "d") {
+      keys.d = true;
+      facingLeft = false;
+  }
 });
 
 document.addEventListener("keyup", (event) => {
@@ -537,3 +684,4 @@ window.addEventListener('resize', () => {
     Body.setPosition(playerBody, { x: playerBody.position.x, y: canvas.height - groundHeight - radius });
   }
 });
+

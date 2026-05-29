@@ -11,7 +11,7 @@ const closeControls = document.getElementById('closeControls');
 
 // Play button: redirect to game
 playBtn.addEventListener('click', () => {
-    window.location.href = 'studs/studs.html';
+    window.location.href = 'studs.html';
 });
 
 // Instructions modal
